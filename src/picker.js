@@ -5,15 +5,60 @@ let isSelectionModeActive = false;
 let originalBodyCursor = document.body.style.cursor;
 let lastHoveredElement = null;
 
-const HIGHLIGHT_STYLE_PROPERTY = "outline";
-const HIGHLIGHT_STYLE_VALUE = "2px dashed red";
-let originalElementStyle = "";
-
 // Global variable to store event listeners while waiting for the selection process
 let lastReceivedEventListeners = null;
 
 // Add a debug flag to control verbose logging
 const DEBUG = true;
+
+// Create and inject overlay elements for highlighting - more like DevTools
+let highlightOverlay = null;
+let labelOverlay = null;
+
+// Function to create the overlay elements
+function createOverlayElements() {
+  if (highlightOverlay) return; // Already created
+  
+  // Create highlight box
+  highlightOverlay = document.createElement('div');
+  highlightOverlay.style.position = 'fixed';
+  highlightOverlay.style.pointerEvents = 'none'; // Let events pass through
+  highlightOverlay.style.boxSizing = 'border-box';
+  highlightOverlay.style.border = '2px solid rgba(255, 0, 0, 0.8)';
+  highlightOverlay.style.backgroundColor = 'rgba(255, 0, 0, 0.2)';
+  highlightOverlay.style.zIndex = '2147483647'; // Highest z-index
+  highlightOverlay.style.display = 'none';
+  
+  // Create element label
+  labelOverlay = document.createElement('div');
+  labelOverlay.style.position = 'fixed';
+  labelOverlay.style.pointerEvents = 'none';
+  labelOverlay.style.padding = '3px 6px';
+  labelOverlay.style.backgroundColor = '#333';
+  labelOverlay.style.color = '#fff';
+  labelOverlay.style.borderRadius = '3px';
+  labelOverlay.style.fontSize = '12px';
+  labelOverlay.style.fontFamily = 'monospace';
+  labelOverlay.style.zIndex = '2147483647';
+  labelOverlay.style.display = 'none';
+  
+  // Append to DOM
+  document.body.appendChild(highlightOverlay);
+  document.body.appendChild(labelOverlay);
+}
+
+// Function to remove overlay elements
+function removeOverlayElements() {
+  if (highlightOverlay && highlightOverlay.parentNode) {
+    highlightOverlay.parentNode.removeChild(highlightOverlay);
+    highlightOverlay = null;
+  }
+  
+  if (labelOverlay && labelOverlay.parentNode) {
+    labelOverlay.parentNode.removeChild(labelOverlay);
+    labelOverlay = null;
+  }
+}
 
 // Function to log debug messages conditionally
 function debug(message, ...args) {
@@ -159,34 +204,122 @@ function getInlineEventHandlers(element) {
   return result;
 }
 
+// Function to position the highlight overlay on an element
+function positionHighlightOverlay(element) {
+  if (!element || !highlightOverlay || !labelOverlay) return;
+  
+  try {
+    // Get element's position and dimensions
+    const rect = element.getBoundingClientRect();
+    
+    // Update highlight box
+    highlightOverlay.style.top = rect.top + 'px';
+    highlightOverlay.style.left = rect.left + 'px';
+    highlightOverlay.style.width = rect.width + 'px';
+    highlightOverlay.style.height = rect.height + 'px';
+    highlightOverlay.style.display = 'block';
+    
+    // Update label
+    const tagName = element.tagName.toLowerCase();
+    const id = element.id ? `#${element.id}` : '';
+    let classes = '';
+    
+    if (typeof element.className === 'string' && element.className.trim()) {
+      classes = '.' + element.className.trim().replace(/\s+/g, '.');
+    } else if (element.className && element.className.baseVal && element.className.baseVal.trim()) {
+      classes = '.' + element.className.baseVal.trim().replace(/\s+/g, '.');
+    }
+    
+    labelOverlay.textContent = `${tagName}${id}${classes}`;
+    labelOverlay.style.top = (rect.top - 20) + 'px';
+    labelOverlay.style.left = rect.left + 'px';
+    labelOverlay.style.display = 'block';
+    
+    // If label would go off the top of the screen, position it at the bottom of the element instead
+    if (rect.top < 20) {
+      labelOverlay.style.top = (rect.bottom + 2) + 'px';
+    }
+  } catch (error) {
+    debug('Error positioning highlight overlay:', error);
+  }
+}
+
+// Hide the highlight overlay
+function hideHighlightOverlay() {
+  if (highlightOverlay) {
+    highlightOverlay.style.display = 'none';
+  }
+  
+  if (labelOverlay) {
+    labelOverlay.style.display = 'none';
+  }
+}
+
 function applyHoverHighlight(element) {
   if (element && element !== document.body && element !== document.documentElement) {
-    originalElementStyle = element.style.getPropertyValue(HIGHLIGHT_STYLE_PROPERTY);
-    element.style.setProperty(HIGHLIGHT_STYLE_PROPERTY, HIGHLIGHT_STYLE_VALUE, "important");
     lastHoveredElement = element;
+    positionHighlightOverlay(element);
+    
+    // Show info about selected element to help debugging
+    debug(`Highlighted element: ${element.tagName.toLowerCase()}${element.id ? '#' + element.id : ''} with classes: ${element.className}`);
   }
 }
 
 function removeHoverHighlight() {
-  console.log("[Picker DEBUG] removeHoverHighlight: Called. lastHoveredElement:", lastHoveredElement, "Original style to restore:", originalElementStyle);
-  if (lastHoveredElement) {
-    lastHoveredElement.style.setProperty(HIGHLIGHT_STYLE_PROPERTY, originalElementStyle);
-    console.log("[Picker DEBUG] removeHoverHighlight: Restored style on", lastHoveredElement);
-    lastHoveredElement = null;
-    originalElementStyle = "";
-  } else {
-    console.log("[Picker DEBUG] removeHoverHighlight: No lastHoveredElement to remove highlight from.");
-  }
+  lastHoveredElement = null;
+  hideHighlightOverlay();
 }
 
+// Function to find the best element at the cursor position
+function getBestElementAtPoint(x, y) {
+  // Standard approach - get element directly at point
+  let element = document.elementFromPoint(x, y);
+  
+  // Ensure we have a valid element
+  if (!element || element === document.body || element === document.documentElement) {
+    return null;
+  }
+  
+  // If it's a text node, get its parent
+  if (element.nodeType === 3) {
+    element = element.parentElement;
+  }
+  
+  return element;
+}
+
+// Simplified mouse move handler
+function handleMouseMove(event) {
+  if (!isSelectionModeActive) return;
+  
+  // Find the best element at the current position
+  const element = getBestElementAtPoint(event.clientX, event.clientY);
+  
+  // Skip if no element found or if it's the same as current
+  if (!element || element === lastHoveredElement) return;
+  
+  // Update highlighting
+  removeHoverHighlight();
+  applyHoverHighlight(element);
+}
+
+// Keep a simple mouseover handler as backup
 function handleMouseOver(event) {
   if (!isSelectionModeActive) return;
+  
+  const element = event.target;
+  
+  // Skip if it's the same as current
+  if (element === lastHoveredElement) return;
+  
   removeHoverHighlight();
-  applyHoverHighlight(event.target);
+  applyHoverHighlight(element);
 }
 
 function handleMouseOut(event) {
   if (!isSelectionModeActive) return;
+  
+  // Only remove if we're truly leaving the element
   if (lastHoveredElement && !lastHoveredElement.contains(event.relatedTarget)) {
     removeHoverHighlight();
   }
@@ -584,10 +717,22 @@ function activateSelectionMode() {
   originalBodyCursor = document.body.style.cursor;
   document.body.style.cursor = "crosshair";
   console.log("Selection mode ACTIVATED - Cursor crosshair, hover highlighting active.");
+  
+  // Create overlay elements
+  createOverlayElements();
 
+  // Use mousemove as primary handler - it's more reliable for complex layouts
+  document.addEventListener("mousemove", handleMouseMove, true);
+  
+  // Keep mouseover/out as backups
   document.addEventListener("mouseover", handleMouseOver, true);
   document.addEventListener("mouseout", handleMouseOut, true);
+  
+  // Click handler for selection
   document.addEventListener("click", handleElementClick, true);
+  
+  // Show simple instructions
+  showToast("Element selection mode active. Click on any element to capture it.");
 }
 
 function deactivateSelectionMode() {
@@ -595,14 +740,17 @@ function deactivateSelectionMode() {
   isSelectionModeActive = false;
   console.log("[Picker DEBUG] deactivateSelectionMode: isSelectionModeActive set to false.");
 
+  document.removeEventListener("mousemove", handleMouseMove, true);
   document.removeEventListener("mouseover", handleMouseOver, true);
   document.removeEventListener("mouseout", handleMouseOut, true);
   document.removeEventListener("click", handleElementClick, true);
+  
   console.log("[Picker DEBUG] deactivateSelectionMode: Event listeners removed.");
 
   document.body.style.cursor = originalBodyCursor;
   removeHoverHighlight();
-  console.log("[Picker DEBUG] deactivateSelectionMode: Cursor reverted, highlight removal attempted.");
+  removeOverlayElements();
+  console.log("[Picker DEBUG] deactivateSelectionMode: Cursor reverted, overlay elements removed.");
 }
 
 // Listen for messages from the background script (toolbar icon click)
