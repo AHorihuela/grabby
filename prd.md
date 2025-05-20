@@ -74,3 +74,4 @@ Build a browser extension that lets users visually pick any element on a webpage
 
 * SnappySnippet – github.com/kdzwinel/SnappySnippet
 * Chrome DevTools Protocol – `DOMDebugger.getEventListeners`, `Runtime.evaluate`
+
