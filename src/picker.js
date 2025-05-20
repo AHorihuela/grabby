@@ -22,6 +22,143 @@ function debug(message, ...args) {
   }
 }
 
+// New function to collect script sources affecting the page
+function collectScriptSources(element) {
+  debug("Collecting script sources");
+  
+  // Collect all script tags on the page
+  const scripts = Array.from(document.scripts);
+  
+  // Group scripts by type (external vs inline)
+  const result = {
+    externalScripts: [],
+    inlineScripts: [],
+    relevantScripts: []
+  };
+  
+  // Extract element identifiers for relevance detection
+  let elementId = element.id || '';
+  let classNames = [];
+  if (typeof element.className === 'string') {
+    classNames = element.className.split(/\s+/).filter(c => c.trim());
+  } else if (element.className && element.className.baseVal) {
+    classNames = element.className.baseVal.split(/\s+/).filter(c => c.trim());
+  }
+  const tagName = element.tagName.toLowerCase();
+  
+  scripts.forEach((script, index) => {
+    if (script.src) {
+      // External script
+      const scriptInfo = {
+        index,
+        src: script.src,
+        type: script.type || 'text/javascript',
+        async: script.async,
+        defer: script.defer
+      };
+      
+      result.externalScripts.push(scriptInfo);
+    } else if (script.textContent && script.textContent.trim().length > 0) {
+      // Inline script (only include if it has content)
+      // Limit size to avoid extremely large captures
+      const maxContentLength = 500;
+      let content = script.textContent.trim();
+      const truncated = content.length > maxContentLength;
+      
+      if (truncated) {
+        content = content.substring(0, maxContentLength) + '... [truncated]';
+      }
+      
+      const scriptInfo = {
+        index,
+        type: script.type || 'text/javascript',
+        content: content,
+        truncated: truncated,
+        originalLength: script.textContent.length
+      };
+      
+      result.inlineScripts.push(scriptInfo);
+      
+      // Check if script content references any of the element's identifiers
+      const scriptText = script.textContent;
+      const isRelevant = 
+        (elementId && scriptText.includes(elementId)) || 
+        classNames.some(className => scriptText.includes(className)) ||
+        scriptText.includes(`"${tagName}"`) || 
+        scriptText.includes(`'${tagName}'`) ||
+        scriptText.includes(`<${tagName}`) ||
+        scriptText.includes(`querySelector`) || 
+        scriptText.includes(`getElementById`);
+      
+      if (isRelevant) {
+        result.relevantScripts.push({
+          ...scriptInfo,
+          relevanceReason: [
+            elementId && scriptText.includes(elementId) ? `Includes element ID: ${elementId}` : null,
+            classNames.some(className => scriptText.includes(className)) ? 
+              `Includes class name(s): ${classNames.filter(cn => scriptText.includes(cn)).join(', ')}` : null,
+            scriptText.includes(`"${tagName}"`) || scriptText.includes(`'${tagName}'`) || scriptText.includes(`<${tagName}`) ? 
+              `References tag name: ${tagName}` : null,
+            scriptText.includes(`querySelector`) || scriptText.includes(`getElementById`) ? 
+              `Contains DOM selection methods` : null
+          ].filter(Boolean)
+        });
+      }
+    }
+  });
+  
+  // Try to fetch relevant external scripts
+  if (result.externalScripts.length > 0) {
+    // Note: For security reasons, we can't actually fetch the content of external scripts
+    // due to CORS restrictions, but we can prioritize them by URL patterns
+    
+    // Look for URLs that might be relevant to this element
+    result.externalScripts.forEach(script => {
+      const url = script.src.toLowerCase();
+      const relevanceMarkers = [
+        ...(elementId ? [elementId.toLowerCase()] : []),
+        ...classNames.map(c => c.toLowerCase()),
+        tagName
+      ];
+      
+      // Check if URL contains any of our relevance markers
+      const matchingMarkers = relevanceMarkers.filter(marker => url.includes(marker));
+      if (matchingMarkers.length > 0) {
+        result.relevantScripts.push({
+          ...script,
+          relevanceReason: [`URL matches identifier(s): ${matchingMarkers.join(', ')}`]
+        });
+      } else if (url.includes('jquery') || url.includes('react') || 
+                url.includes('angular') || url.includes('vue')) {
+        // Add common frameworks that might be relevant
+        result.relevantScripts.push({
+          ...script,
+          relevanceReason: [`Common JavaScript framework or library`]
+        });
+      }
+    });
+  }
+  
+  return result;
+}
+
+// Function to find inline event handlers on an element
+function getInlineEventHandlers(element) {
+  debug("Getting inline event handlers");
+  
+  const result = {};
+  
+  // Check all attributes for "on" event handlers (onclick, onmouseover, etc.)
+  Array.from(element.attributes).forEach(attr => {
+    if (attr.name.startsWith('on')) {
+      const eventType = attr.name.slice(2); // Remove "on" prefix
+      result[eventType] = attr.value;
+    }
+  });
+  
+  return result;
+}
+
 function applyHoverHighlight(element) {
   if (element && element !== document.body && element !== document.documentElement) {
     originalElementStyle = element.style.getPropertyValue(HIGHLIGHT_STYLE_PROPERTY);
@@ -224,6 +361,14 @@ async function handleElementClick(event) {
     const outerHTML = clickedElement.outerHTML;
     console.log("Outer HTML:", outerHTML);
 
+    // Collect script sources
+    const scriptSources = collectScriptSources(clickedElement);
+    debug("Collected script sources:", scriptSources);
+    
+    // Get inline event handlers
+    const inlineHandlers = getInlineEventHandlers(clickedElement);
+    debug("Inline event handlers:", inlineHandlers);
+
     const computedStyles = window.getComputedStyle(clickedElement);
     let stylesString = "";
     let classNameString = "";
@@ -372,11 +517,31 @@ ${clickedElement.tagName.toLowerCase()}${clickedElement.id ? '#' + clickedElemen
 ${JSON.stringify(eventListeners, null, 2)}
 */
 
+/* --- javascript-data.json --- */
+/*
+{
+  "inlineHandlers": ${JSON.stringify(inlineHandlers, null, 2)},
+  "relevantScripts": ${JSON.stringify(scriptSources.relevantScripts || [], null, 2)}
+}
+*/
+
+/* --- all-scripts.json --- */
+/*
+{
+  "externalScripts": ${JSON.stringify(scriptSources.externalScripts || [], null, 2)},
+  "inlineScripts": ${JSON.stringify(scriptSources.inlineScripts || [], null, 2)}
+}
+*/
+
 /* --- Additional Info --- */
 ${eventListeners && eventListeners.error ? 
 `/* Note: Could not fully retrieve event listeners. This is often due to DevTools security restrictions.
    The element's HTML and CSS have been successfully captured.
    Attempted selectors: ${JSON.stringify(eventListeners.fallbackData?.fallbackSelectors || [])} */` : ''}
+${scriptSources.relevantScripts && scriptSources.relevantScripts.length ? 
+`/* Note: Found ${scriptSources.relevantScripts.length} JavaScript files/snippets that may be relevant to this element.
+   These are included in the javascript-data.json section. */` : 
+`/* Note: No relevant JavaScript files detected for this element. */`}
 `;
 
     // Use the enhanced clipboard function
