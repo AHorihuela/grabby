@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Scraper-Eraser Extension",
+  "version": "0.1.0",
+  "description": "Visually pick, copy, and remove webpage elements.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "clipboardWrite",
+    "debugger"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "background": {
+    "service_worker": "bg.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["picker.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["panel.js", "panel-ui.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "devtools_page": "devtools.html",
+  "action": {
+    "default_title": "Activate Scraper-Eraser"
+  }
+} 
