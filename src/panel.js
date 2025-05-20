@@ -5,6 +5,12 @@ console.log("Scraper-Eraser panel.js loaded.");
 let contentScriptConnected = false;
 let uiInitialized = false;
 
+// Debug settings with defaults
+let debugSettings = {
+  useSimpleSelectors: true,
+  tryFallbackSelectors: true
+};
+
 // Handle extension context invalidation
 function setupGlobalErrorHandler() {
   window.addEventListener('error', function(event) {
@@ -58,6 +64,19 @@ setupGlobalErrorHandler();
 window.panelUiLoaded = function() {
   console.log("Panel UI loaded callback received");
   uiInitialized = true;
+  
+  // Load debug settings
+  try {
+    if (localStorage.getItem('useSimpleSelectors') !== null) {
+      debugSettings.useSimpleSelectors = localStorage.getItem('useSimpleSelectors') !== 'false';
+    }
+    if (localStorage.getItem('tryFallbackSelectors') !== null) {
+      debugSettings.tryFallbackSelectors = localStorage.getItem('tryFallbackSelectors') !== 'false';
+    }
+    console.log("Loaded debug settings:", debugSettings);
+  } catch (err) {
+    console.error("Error loading debug settings:", err);
+  }
   
   // Run connection check when both panel.js and UI are ready
   setTimeout(checkContentScriptConnection, 500);
@@ -198,7 +217,90 @@ async function getEventListenersForElement(elementSelector) {
     const result = await chrome.devtools.inspectedWindow.eval(
       `(function() {
         try {
-          const element = ${elementSelector};
+          // Helper function to find element by multiple methods
+          function findElementByAnyMeans() {
+            // First try the passed selector directly
+            let element = null;
+            
+            try {
+              element = ${elementSelector};
+            } catch (directError) {
+              console.error("Direct selector failed:", directError);
+            }
+            
+            // If direct selector failed, try alternative approaches
+            if (!element && ${debugSettings.useSimpleSelectors}) {
+              console.log("Direct selector failed, trying alternatives");
+              
+              // For React-style components with complex class names
+              try {
+                // Get the selector string and parse out the tag and class parts
+                const selectorString = ${JSON.stringify(elementSelector)};
+                console.log("Trying to parse:", selectorString);
+                
+                // Extract tag name
+                let tagName = "div"; // Default to div
+                let className = "";
+                
+                // Extract the tag and first class if possible
+                const tagMatch = selectorString.match(/([a-zA-Z0-9]+)(?:\\.|\\.\\w+)/);
+                if (tagMatch) {
+                  tagName = tagMatch[1];
+                }
+                
+                // Extract any class names from the selector
+                const classMatches = selectorString.match(/\\.([a-zA-Z0-9_-]+)/g);
+                if (classMatches && classMatches.length > 0) {
+                  // Remove the dots and take just the first class name for simplicity
+                  const firstClass = classMatches[0].substring(1);
+                  className = firstClass;
+                }
+                
+                console.log("Looking for tag:", tagName, "with class containing:", className);
+                
+                // Use a more flexible approach - get all elements of this tag type
+                // and find ones that contain the class name substring
+                const allElements = document.querySelectorAll(tagName);
+                console.log("Found", allElements.length, "elements with tag", tagName);
+                
+                // Look for partial class name matches
+                for (let i = 0; i < allElements.length; i++) {
+                  const el = allElements[i];
+                  if (el.className && el.className.includes(className)) {
+                    console.log("Found matching element by partial class:", el);
+                    return el;
+                  }
+                }
+                
+                // If still not found and we have a more complex class name, try a looser match
+                if (className.includes('_')) {
+                  // For names like "Header_nav__JeSpd", try just matching on "Header"
+                  const baseClassName = className.split('_')[0];
+                  console.log("Trying looser match with base name:", baseClassName);
+                  
+                  for (let i = 0; i < allElements.length; i++) {
+                    const el = allElements[i];
+                    if (el.className && el.className.includes(baseClassName)) {
+                      console.log("Found matching element by base class:", el);
+                      return el;
+                    }
+                  }
+                }
+                
+                // Last resort - just return the first element of this tag type
+                if (allElements.length > 0) {
+                  console.log("Falling back to first element of tag type");
+                  return allElements[0];
+                }
+              } catch (alternativeError) {
+                console.error("Alternative selector approach failed:", alternativeError);
+              }
+            }
+            
+            return element;
+          }
+          
+          const element = findElementByAnyMeans();
           if (!element) return {error: "Element not found"};
           
           // Get any inline event handlers
@@ -230,6 +332,12 @@ async function getEventListenersForElement(elementSelector) {
       { useContentScriptContext: false }
     );
 
+    if (result === null || result === undefined) {
+      console.error("Error getting element: Result is null or undefined");
+      logToUI("Error getting element: Result is null or undefined");
+      return { error: "Element query returned null or undefined result" };
+    }
+    
     if (result.error) {
       console.error("Error getting element:", result.error);
       logToUI("Error getting element: " + result.error);
@@ -266,10 +374,10 @@ async function getEventListenersForElement(elementSelector) {
         { useContentScriptContext: false }
       );
       
-      // Combine results
+      // Safely combine results with null checking
       const combined = {
         ...result,
-        ...evalResult,
+        ...(evalResult || {}), // Only spread if evalResult exists
         timestamp: new Date().toISOString() 
       };
       
@@ -309,8 +417,55 @@ window.addEventListener('message', function(event) {
       `(async function() {
         try {
           const testText = "DevTools Clipboard Test";
-          await navigator.clipboard.writeText(testText);
-          return { success: true, message: "Clipboard write successful" };
+          
+          // First try the standard Clipboard API
+          try {
+            await navigator.clipboard.writeText(testText);
+            return { 
+              success: true, 
+              method: "clipboard-api",
+              message: "Clipboard write successful using Clipboard API"
+            };
+          } catch (clipboardError) {
+            console.warn("Clipboard API failed:", clipboardError);
+            
+            // Try fallback with execCommand
+            try {
+              const textArea = document.createElement("textarea");
+              textArea.value = testText;
+              textArea.style.position = "fixed";
+              textArea.style.left = "-999999px";
+              textArea.style.top = "-999999px";
+              document.body.appendChild(textArea);
+              textArea.focus();
+              textArea.select();
+              
+              const fallbackSuccess = document.execCommand('copy');
+              document.body.removeChild(textArea);
+              
+              if (fallbackSuccess) {
+                return { 
+                  success: true, 
+                  method: "execCommand-fallback",
+                  message: "Clipboard write successful using execCommand fallback",
+                  apiError: clipboardError.toString()
+                };
+              } else {
+                return { 
+                  success: false, 
+                  error: "Both clipboard methods failed", 
+                  apiError: clipboardError.toString() 
+                };
+              }
+            } catch (fallbackError) {
+              return { 
+                success: false, 
+                error: "Both clipboard methods failed", 
+                apiError: clipboardError.toString(),
+                fallbackError: fallbackError.toString()
+              };
+            }
+          }
         } catch (e) {
           return { success: false, error: e.toString() };
         }
@@ -320,9 +475,16 @@ window.addEventListener('message', function(event) {
           logToUI("Exception testing clipboard: " + isException);
         } else if (result && result.error) {
           logToUI("Clipboard test failed: " + result.error);
+          if (result.apiError) {
+            logToUI("API error: " + result.apiError);
+          }
+          if (result.fallbackError) {
+            logToUI("Fallback error: " + result.fallbackError);
+          }
         } else if (result) {
           logToUI("Clipboard test result: " + (result.success ? "Success" : "Failed"));
           if (result.success) {
+            logToUI(`✓ Clipboard test succeeded using ${result.method || "unknown method"}`);
             logToUI("✓ This confirms the main extension clipboard functionality works correctly.");
             logToUI("✓ The clipboard error in the panel doesn't affect the extension's operation.");
           }
@@ -331,6 +493,20 @@ window.addEventListener('message', function(event) {
         }
       }
     );
+  } else if (event.data.type === 'updateDebugSetting') {
+    // Update debug settings from UI
+    if (event.data.setting && event.data.value !== undefined) {
+      debugSettings[event.data.setting] = event.data.value;
+      logToUI(`Debug setting updated: ${event.data.setting} = ${event.data.value}`);
+      console.log("Updated debug settings:", debugSettings);
+      
+      // Persist to localStorage
+      try {
+        localStorage.setItem(event.data.setting, event.data.value);
+      } catch (err) {
+        console.error("Error saving debug setting:", err);
+      }
+    }
   }
 });
 
@@ -341,42 +517,98 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     logToUI("Received event listeners request for " + message.targetElementInfo.tagName);
     
     // Formulate a selector based on targetElementInfo
-    let selector = "document.querySelector(";
+    let selector = "";
+    let fallbackSelectors = [];
+    
+    // First try with ID if available (most reliable)
     if (message.targetElementInfo.id) {
-      selector += `'#${message.targetElementInfo.id}'`;
+      selector = `document.getElementById('${message.targetElementInfo.id}')`;
+      fallbackSelectors.push(selector);
     } else {
-      // Fall back to a tag + class selector if available
+      // Create a tag-based selector
       let tagName = message.targetElementInfo.tagName.toLowerCase();
-      let classSelector = "";
       
+      // Check for CSS classes
+      let classesString = "";
       if (typeof message.targetElementInfo.classes === 'string' && message.targetElementInfo.classes.trim()) {
-        classSelector = "." + message.targetElementInfo.classes.trim().replace(/\s+/g, '.');
+        classesString = message.targetElementInfo.classes.trim();
       } else if (message.targetElementInfo.classes && 
-                message.targetElementInfo.classes.baseVal && 
-                message.targetElementInfo.classes.baseVal.trim()) {
-        classSelector = "." + message.targetElementInfo.classes.baseVal.trim().replace(/\s+/g, '.');
+               message.targetElementInfo.classes.baseVal && 
+               message.targetElementInfo.classes.baseVal.trim()) {
+        classesString = message.targetElementInfo.classes.baseVal.trim();
       }
       
-      selector += `'${tagName}${classSelector}'`;
+      // Generate selectors with different levels of specificity
+      if (classesString) {
+        // Try with the first class only (more likely to work)
+        const firstClass = classesString.split(/\s+/)[0];
+        if (firstClass) {
+          selector = `document.querySelector('${tagName}.${firstClass}')`;
+          fallbackSelectors.push(selector);
+        }
+        
+        // Also try with all classes (can be more specific but also more fragile)
+        const allClasses = classesString.replace(/\s+/g, '.');
+        if (allClasses) {
+          fallbackSelectors.push(`document.querySelector('${tagName}.${allClasses}')`);
+        }
+      }
+      
+      // If we still don't have a good selector, fallback to more generic options
+      if (!selector && fallbackSelectors.length === 0) {
+        // Fallback to tagName only
+        selector = `document.getElementsByTagName('${tagName}')[0]`;
+        fallbackSelectors.push(selector);
+      } else if (!selector && fallbackSelectors.length > 0) {
+        // Take the first fallback if we don't have a primary
+        selector = fallbackSelectors[0];
+      }
     }
-    selector += ")";
     
     logToUI("Using selector: " + selector);
+    if (fallbackSelectors.length > 1) {
+      logToUI(`Also prepared ${fallbackSelectors.length - 1} fallback selectors if needed`);
+    }
     
     // Make sure we respond quickly to keep the message channel open
     sendResponse({ 
       listeners: [{ note: "Getting listeners, please wait..." }],
       selector: selector,
+      fallbackSelectors: fallbackSelectors,
       timestamp: new Date().toISOString(),
       devToolsConnected: contentScriptConnected,
       preliminary: true
     });
     
-    // Now try to actually get the listeners
+    // Try to get element with the primary selector
     getEventListenersForElement(selector)
       .then(result => {
-        // Instead of trying to send another response (which won't work),
-        // send a new message to the content script with the full data
+        // If primary selector failed but we have fallbacks, try them
+        if (result.error && 
+            result.error.includes("null or undefined") && 
+            fallbackSelectors.length > 1 && 
+            debugSettings.tryFallbackSelectors) {
+          logToUI("Primary selector failed, trying fallback selectors...");
+          
+          // Find a fallback that wasn't used as the primary
+          const fallbackToTry = fallbackSelectors.find(s => s !== selector);
+          if (fallbackToTry) {
+            logToUI("Trying fallback: " + fallbackToTry);
+            return getEventListenersForElement(fallbackToTry).then(fallbackResult => {
+              if (!fallbackResult.error) {
+                logToUI("Fallback selector succeeded!");
+                return { ...fallbackResult, usedFallback: true, fallbackSelector: fallbackToTry };
+              }
+              return result; // Stick with original result if fallback also failed
+            });
+          }
+        } else if (result.error && !debugSettings.tryFallbackSelectors) {
+          logToUI("Primary selector failed, but fallback selectors are disabled");
+        }
+        return result;
+      })
+      .then(result => {
+        // Send the full data via a new message
         logToUI("Got listeners, sending back via separate message");
         
         try {
@@ -390,7 +622,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               chrome.tabs.sendMessage(tabs[0].id, {
                 action: "eventListenersResult",
                 selector: selector,
+                fallbackSelectors: fallbackSelectors,
                 listeners: result,
+                useSimpleSelectors: debugSettings.useSimpleSelectors,
+                tryFallbackSelectors: debugSettings.tryFallbackSelectors,
                 timestamp: new Date().toISOString()
               }, function(response) {
                 if (chrome.runtime.lastError) {

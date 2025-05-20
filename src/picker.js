@@ -344,12 +344,39 @@ ${devToolsError ? `/* Note: DevTools error - ${devToolsError.message} */\n` : ''
 ${devToolsConnected ? '/* DevTools Connected */\n' : '/* DevTools Not Connected */\n'}
 
 /* --- index.html --- */
+/*
 ${outerHTML}
+*/
 
 /* --- styles.css --- */
-${stylesString}
+/* Computed styles for element: ${clickedElement.tagName.toLowerCase()}${clickedElement.id ? '#' + clickedElement.id : ''}${safeClassNameString} */
+
+/* CSS-compatible selector */
+${clickedElement.tagName.toLowerCase()}${clickedElement.id ? '#' + clickedElement.id : ''}${
+  typeof clickedElement.className === 'string' && clickedElement.className.trim() 
+  ? '.' + clickedElement.className.trim().replace(/\s+/g, '.') 
+  : ''
+} {
+  ${stylesString.includes('element {') 
+    ? stylesString
+        .split('element {')[1]
+        .replace(/^\s*}\s*$/m, '') // Remove the closing bracket
+        .split('\n')
+        .filter(line => line.trim())
+        .join('\n  ')
+    : '/* No computed styles available */'}
+}
+
 /* --- listeners.json --- */
+/*
 ${JSON.stringify(eventListeners, null, 2)}
+*/
+
+/* --- Additional Info --- */
+${eventListeners && eventListeners.error ? 
+`/* Note: Could not fully retrieve event listeners. This is often due to DevTools security restrictions.
+   The element's HTML and CSS have been successfully captured.
+   Attempted selectors: ${JSON.stringify(eventListeners.fallbackData?.fallbackSelectors || [])} */` : ''}
 `;
 
     // Use the enhanced clipboard function
@@ -438,7 +465,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.action === "eventListenersResult") {
     // Handle the separate message with full event listener data
     console.log("[Picker DEBUG] Received event listeners result:", message.listeners);
-    lastReceivedEventListeners = message.listeners;
+    
+    // Improve error handling for the listeners result
+    if (message.listeners && message.listeners.error) {
+      console.warn("[Picker DEBUG] Error in listeners result:", message.listeners.error);
+      
+      // Create a more informative structure that includes the error but is still usable
+      lastReceivedEventListeners = {
+        error: message.listeners.error,
+        note: "Error retrieving event listeners. This might happen if the element cannot be found or if DevTools is not in the right context.",
+        fallbackData: {
+          selector: message.selector || "unknown",
+          fallbackSelectors: message.fallbackSelectors || [],
+          timestamp: message.timestamp || new Date().toISOString(),
+          partial: true
+        }
+      };
+      
+      // If we used a fallback selector and it succeeded, add that info
+      if (message.listeners.usedFallback && message.listeners.fallbackSelector) {
+        lastReceivedEventListeners.note += ` A fallback selector was tried: ${message.listeners.fallbackSelector}`;
+      }
+    } else {
+      // If we have listener data but it used a fallback, add that info
+      if (message.listeners && message.listeners.usedFallback) {
+        const enhancedListeners = {
+          ...message.listeners,
+          note: `Retrieved listeners using fallback selector: ${message.listeners.fallbackSelector || "unknown"}`,
+        };
+        lastReceivedEventListeners = enhancedListeners;
+      } else {
+        // Store the listeners normally if no error and no fallback used
+        lastReceivedEventListeners = message.listeners;
+      }
+    }
+    
     sendResponse({ received: true });
     return true;
   }
