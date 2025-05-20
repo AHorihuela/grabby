@@ -60,7 +60,7 @@ function setupEventListeners() {
     testClipboardBtn.addEventListener('click', async () => {
       try {
         addLogEntry('Testing clipboard access in panel context...');
-        const text = "Scraper-Eraser clipboard test";
+        const text = "Grabby clipboard test";
         await navigator.clipboard.writeText(text);
         addLogEntry('Successfully wrote to clipboard: "' + text + '"');
         
@@ -78,7 +78,7 @@ function setupEventListeners() {
           // Try the fallback method for clipboard
           try {
             const textArea = document.createElement("textarea");
-            textArea.value = "Scraper-Eraser clipboard test (fallback)";
+            textArea.value = "Grabby clipboard test (fallback)";
             textArea.style.position = "fixed";
             textArea.style.left = "-999999px";
             textArea.style.top = "-999999px";

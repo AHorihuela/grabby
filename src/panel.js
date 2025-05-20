@@ -1,5 +1,5 @@
 // DevTools panel script (panel.js)
-console.log("Scraper-Eraser panel.js loaded.");
+console.log("Grabby panel.js loaded.");
 
 // Track if we can communicate with the content script
 let contentScriptConnected = false;

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Scraper-Eraser Extension",
+  "name": "Grabby",
   "version": "0.1.0",
   "description": "Visually pick, copy, and remove webpage elements.",
   "permissions": [
@@ -32,6 +32,6 @@
   ],
   "devtools_page": "devtools.html",
   "action": {
-    "default_title": "Activate Scraper-Eraser"
+    "default_title": "Activate Grabby"
   }
 } 

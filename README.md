@@ -1,4 +1,4 @@
-# Grabby (Scraper-Eraser Extension)
+# Grabby
 
 This Chrome extension allows you to visually select any element on a webpage, copy its HTML, CSS, and JavaScript to the clipboard, and analyze its structure and behavior.
 
@@ -40,7 +40,7 @@ This Chrome extension allows you to visually select any element on a webpage, co
 For enhanced functionality (including event listener capture):
 
 1. Open Chrome DevTools (F12 or right-click → Inspect)
-2. Click on the "Scraper-Eraser" tab in the DevTools panel
+2. Click on the "Grabby" tab in the DevTools panel
 3. Ensure it shows "Connected to content script"
 4. Use the extension normally - now with event listener detection!
 
@@ -49,7 +49,7 @@ For enhanced functionality (including event listener capture):
 The copied data includes these well-organized sections:
 
 ```css
-/* --- Scraper-Eraser Element Data --- */
+/* --- Grabby Element Data --- */
 /* Element information and metadata */
 
 /* --- index.html --- */
@@ -75,7 +75,7 @@ The copied data includes these well-organized sections:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/grabby.git
+git clone https://github.com/AHorihuela/grabby.git
 
 # Navigate to the project directory
 cd grabby

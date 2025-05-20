@@ -1,5 +1,5 @@
 // DevTools script (devtools.js)
-console.log("Scraper-Eraser DevTools script loaded.");
+console.log("Grabby DevTools script loaded.");
 
 // Create a variable to keep track of the panel instance
 let scraperEraserPanel = null;
@@ -39,12 +39,12 @@ function safeAccessPanelWindow(panelWindow, callback) {
 
 // Function to initialize panel functionality
 function initializePanel(panel) {
-  console.log("Scraper-Eraser panel created and being initialized", panel);
+  console.log("Grabby panel created and being initialized", panel);
   scraperEraserPanel = panel;
   
   // Listen for panel showing/hiding events to manage resources
   panel.onShown.addListener(function(panelWindow) {
-    console.log("Scraper-Eraser panel shown");
+    console.log("Grabby panel shown");
     
     // Give the panel window a moment to fully load before trying to initialize
     setTimeout(() => {
@@ -81,7 +81,7 @@ function initializePanel(panel) {
   });
 
   panel.onHidden.addListener(function() {
-    console.log("Scraper-Eraser panel hidden");
+    console.log("Grabby panel hidden");
     // We could potentially pause some operations when the panel is hidden
   });
 }
@@ -89,7 +89,7 @@ function initializePanel(panel) {
 // Create the DevTools panel
 try {
   chrome.devtools.panels.create(
-    "Scraper-Eraser", // Title of the panel
+    "Grabby", // Title of the panel
     null, // Icon path (optional)
     "panel.html", // HTML page for the panel
     initializePanel

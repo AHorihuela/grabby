@@ -1,5 +1,5 @@
 // Background service worker (bg.js)
-console.log("Scraper-Eraser background script loaded.");
+console.log("Grabby background script loaded.");
 
 const BADGE_ON_TEXT = "ON";
 const BADGE_ON_COLOR = "#008800"; // Green
@@ -88,7 +88,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.log("Background: openDevToolsPanel requested for tab", sender.tab.id);
         sendResponse({ 
           success: false, 
-          note: "Cannot open DevTools programmatically. Please open DevTools manually (F12) and select the Scraper-Eraser panel."
+          note: "Cannot open DevTools programmatically. Please open DevTools manually (F12) and select the Grabby panel."
         });
       } catch (error) {
         console.error("Error in openDevToolsPanel:", error);

@@ -1,5 +1,5 @@
 // Content script (picker.js)
-console.log("Scraper-Eraser content script loaded.");
+console.log("Grabby content script loaded.");
 
 let isSelectionModeActive = false;
 let originalBodyCursor = document.body.style.cursor;
@@ -326,7 +326,7 @@ async function ensureDevToolsConnection() {
           // Show a message to the user
           showToast(response && response.note ? 
             response.note : 
-            "Please open DevTools (F12) and select Scraper-Eraser panel");
+            "Please open DevTools (F12) and select Grabby panel");
           resolve();
         });
       });
@@ -471,7 +471,7 @@ async function handleElementClick(event) {
       } else {
         // DevTools not connected, provide a helpful message
         eventListeners = [{ 
-          note: "DevTools panel not connected. Please open DevTools (F12) and select the Scraper-Eraser panel to capture event listeners." 
+          note: "DevTools panel not connected. Please open DevTools (F12) and select the Grabby panel to capture event listeners." 
         }];
       }
     } catch (err) {
@@ -482,7 +482,7 @@ async function handleElementClick(event) {
 
     // Add comment at top of the bundled text to help the user understand the output
     const bundledText = 
-`/* --- Scraper-Eraser Element Data --- */
+`/* --- Grabby Element Data --- */
 /* Element: ${clickedElement.tagName.toLowerCase()}${clickedElement.id ? '#' + clickedElement.id : ''}${safeClassNameString} */
 /* Captured on: ${new Date().toLocaleString()} */
 ${devToolsError ? `/* Note: DevTools error - ${devToolsError.message} */\n` : ''}
